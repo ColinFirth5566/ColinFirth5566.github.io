@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
   <header class="site-header">
@@ -35,12 +35,17 @@
         <input type="file" id="image-input" accept="image/jpeg,image/png" multiple />
       </label>
 
+      <div class="image-preview-main" id="image-preview-main">
+        <span class="muted small">No image preview.</span>
+      </div>
+
       <div class="image-previews" id="image-previews">
         <span class="muted small">No images selected.</span>
       </div>
 
       <div class="status-box">
         <p class="status-line">File: <span id="file-name">No file selected.</span></p>
+        <p class="status-line">Images: <span id="image-count">0</span></p>
         <p class="muted small">Tip: Use .glb for a single file with embedded textures.</p>
       </div>
 
@@ -68,6 +73,6 @@
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

@@ -1,6 +1,8 @@
 const meshInput = document.getElementById('mesh-input');
 const imageInput = document.getElementById('image-input');
 const imagePreviews = document.getElementById('image-previews');
+const imagePreviewMain = document.getElementById('image-preview-main');
+const imageCount = document.getElementById('image-count');
 const fileName = document.getElementById('file-name');
 const viewerCanvas = document.getElementById('viewer-canvas');
 const viewerStatus = document.getElementById('viewer-status');
@@ -154,6 +156,12 @@ const clearImages = () => {
   if (imagePreviews) {
     imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
   }
+  if (imagePreviewMain) {
+    imagePreviewMain.innerHTML = '<span class="muted small">No image preview.</span>';
+  }
+  if (imageCount) {
+    imageCount.textContent = '0';
+  }
   if (viewerState && viewerState.scene) {
     viewerState.scene.background = null;
   }
@@ -178,21 +186,36 @@ if (imageInput) {
     if (!imagePreviews) return;
 
     imagePreviews.innerHTML = '';
+    if (imagePreviewMain) {
+      imagePreviewMain.innerHTML = '<span class="muted small">No image preview.</span>';
+    }
+    if (imageCount) {
+      imageCount.textContent = String(files.length);
+    }
 
     if (!files.length) {
       imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
-      if (viewerState.scene) viewerState.scene.background = null;
+      if (viewerState && viewerState.scene) viewerState.scene.background = null;
       return;
     }
 
     files.slice(0, 8).forEach((file, index) => {
-      const url = URL.createObjectURL(file);
+      const thumbUrl = URL.createObjectURL(file);
       const img = document.createElement('img');
-      img.src = url;
+      img.src = thumbUrl;
       img.alt = file.name;
-      img.onload = () => URL.revokeObjectURL(url);
+      img.onload = () => URL.revokeObjectURL(thumbUrl);
       imagePreviews.appendChild(img);
       if (index === 0) {
+        if (imagePreviewMain) {
+          imagePreviewMain.innerHTML = '';
+          const mainImg = document.createElement('img');
+          const mainUrl = URL.createObjectURL(file);
+          mainImg.src = mainUrl;
+          mainImg.alt = file.name;
+          mainImg.onload = () => URL.revokeObjectURL(mainUrl);
+          imagePreviewMain.appendChild(mainImg);
+        }
         setBackgroundFromFile(file);
       }
     });
