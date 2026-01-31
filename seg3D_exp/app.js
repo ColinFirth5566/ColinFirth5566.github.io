@@ -7,22 +7,14 @@ const viewerStatus = document.getElementById('viewer-status');
 const resetViewBtn = document.getElementById('reset-view');
 const clearViewBtn = document.getElementById('clear-view');
 
-if (!viewerCanvas || !window.THREE) {
-  if (viewerStatus) viewerStatus.textContent = 'Three.js failed to load.';
-}
-
-const viewerState = {
-  renderer: null,
-  scene: null,
-  camera: null,
-  controls: null,
-  currentObject: null,
-  homePosition: new THREE.Vector3(2.5, 2, 3.5),
-  homeTarget: new THREE.Vector3(0, 0, 0),
-};
+const threeAvailable = Boolean(window.THREE && window.THREE.Scene);
+let viewerState = null;
 
 const initViewer = () => {
-  if (!viewerCanvas || !window.THREE) return;
+  if (!viewerCanvas || !threeAvailable) {
+    if (viewerStatus) viewerStatus.textContent = 'Three.js failed to load.';
+    return;
+  }
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
@@ -47,14 +39,21 @@ const initViewer = () => {
   grid.material.transparent = true;
   scene.add(grid);
 
-  camera.position.copy(viewerState.homePosition);
-  controls.target.copy(viewerState.homeTarget);
+  const homePosition = new THREE.Vector3(2.5, 2, 3.5);
+  const homeTarget = new THREE.Vector3(0, 0, 0);
+  camera.position.copy(homePosition);
+  controls.target.copy(homeTarget);
   controls.update();
 
-  viewerState.renderer = renderer;
-  viewerState.scene = scene;
-  viewerState.camera = camera;
-  viewerState.controls = controls;
+  viewerState = {
+    renderer,
+    scene,
+    camera,
+    controls,
+    currentObject: null,
+    homePosition,
+    homeTarget,
+  };
 
   const animate = () => {
     requestAnimationFrame(animate);
@@ -66,7 +65,7 @@ const initViewer = () => {
 };
 
 const resizeViewer = () => {
-  if (!viewerState.renderer || !viewerState.camera) return;
+  if (!viewerState || !viewerState.renderer || !viewerState.camera) return;
   const rect = viewerCanvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   viewerState.renderer.setSize(rect.width, rect.height);
@@ -77,6 +76,7 @@ const resizeViewer = () => {
 window.addEventListener('resize', resizeViewer);
 
 const frameObject = (object) => {
+  if (!viewerState) return;
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
@@ -95,7 +95,7 @@ const frameObject = (object) => {
 };
 
 const clearViewerObject = () => {
-  if (!viewerState.currentObject) return;
+  if (!viewerState || !viewerState.currentObject) return;
   viewerState.scene.remove(viewerState.currentObject);
   viewerState.currentObject.traverse((child) => {
     if (child.isMesh) {
@@ -108,7 +108,7 @@ const clearViewerObject = () => {
 };
 
 const loadMeshFile = (file) => {
-  if (!file || !viewerState.scene) return;
+  if (!file || !viewerState || !viewerState.scene) return;
 
   clearViewerObject();
   if (viewerStatus) viewerStatus.textContent = 'Loading mesh...';
@@ -133,7 +133,7 @@ const loadMeshFile = (file) => {
 };
 
 const setBackgroundFromFile = (file) => {
-  if (!file || !viewerState.scene) return;
+  if (!file || !viewerState || !viewerState.scene) return;
   const url = URL.createObjectURL(file);
   const loader = new THREE.TextureLoader();
   loader.load(
@@ -154,7 +154,7 @@ const clearImages = () => {
   if (imagePreviews) {
     imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
   }
-  if (viewerState.scene) {
+  if (viewerState && viewerState.scene) {
     viewerState.scene.background = null;
   }
 };
@@ -164,6 +164,10 @@ if (meshInput) {
     const file = event.target.files[0];
     if (!file) return;
     if (fileName) fileName.textContent = file.name;
+    if (!threeAvailable) {
+      if (viewerStatus) viewerStatus.textContent = 'Three.js failed to load.';
+      return;
+    }
     loadMeshFile(file);
   });
 }
@@ -197,7 +201,7 @@ if (imageInput) {
 
 if (resetViewBtn) {
   resetViewBtn.addEventListener('click', () => {
-    if (!viewerState.camera || !viewerState.controls) return;
+    if (!viewerState || !viewerState.camera || !viewerState.controls) return;
     viewerState.camera.position.copy(viewerState.homePosition);
     viewerState.controls.target.copy(viewerState.homeTarget);
     viewerState.controls.update();
