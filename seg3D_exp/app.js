@@ -1,4 +1,6 @@
 const meshInput = document.getElementById('mesh-input');
+const imageInput = document.getElementById('image-input');
+const imagePreviews = document.getElementById('image-previews');
 const fileName = document.getElementById('file-name');
 const viewerCanvas = document.getElementById('viewer-canvas');
 const viewerStatus = document.getElementById('viewer-status');
@@ -130,12 +132,66 @@ const loadMeshFile = (file) => {
   );
 };
 
+const setBackgroundFromFile = (file) => {
+  if (!file || !viewerState.scene) return;
+  const url = URL.createObjectURL(file);
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    url,
+    (texture) => {
+      viewerState.scene.background = texture;
+      URL.revokeObjectURL(url);
+    },
+    undefined,
+    () => {
+      URL.revokeObjectURL(url);
+    }
+  );
+};
+
+const clearImages = () => {
+  if (imageInput) imageInput.value = '';
+  if (imagePreviews) {
+    imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
+  }
+  if (viewerState.scene) {
+    viewerState.scene.background = null;
+  }
+};
+
 if (meshInput) {
   meshInput.addEventListener('change', (event) => {
     const file = event.target.files[0];
     if (!file) return;
     if (fileName) fileName.textContent = file.name;
     loadMeshFile(file);
+  });
+}
+
+if (imageInput) {
+  imageInput.addEventListener('change', (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!imagePreviews) return;
+
+    imagePreviews.innerHTML = '';
+
+    if (!files.length) {
+      imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
+      if (viewerState.scene) viewerState.scene.background = null;
+      return;
+    }
+
+    files.slice(0, 8).forEach((file, index) => {
+      const url = URL.createObjectURL(file);
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = file.name;
+      img.onload = () => URL.revokeObjectURL(url);
+      imagePreviews.appendChild(img);
+      if (index === 0) {
+        setBackgroundFromFile(file);
+      }
+    });
   });
 }
 
@@ -153,6 +209,7 @@ if (clearViewBtn) {
     if (meshInput) meshInput.value = '';
     if (fileName) fileName.textContent = 'No file selected.';
     clearViewerObject();
+    clearImages();
   });
 }
 

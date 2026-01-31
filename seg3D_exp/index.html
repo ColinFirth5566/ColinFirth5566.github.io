@@ -30,6 +30,15 @@
         <input type="file" id="mesh-input" accept=".glb,.gltf" />
       </label>
 
+      <label class="file-field">
+        <span>Reference images (jpg/png)</span>
+        <input type="file" id="image-input" accept="image/jpeg,image/png" multiple />
+      </label>
+
+      <div class="image-previews" id="image-previews">
+        <span class="muted small">No images selected.</span>
+      </div>
+
       <div class="status-box">
         <p class="status-line">File: <span id="file-name">No file selected.</span></p>
         <p class="muted small">Tip: Use .glb for a single file with embedded textures.</p>
