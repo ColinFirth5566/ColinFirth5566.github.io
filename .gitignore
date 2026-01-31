@@ -1,0 +1,9 @@
+# Python / venv
+seg3D_exp/backend/.venv/
+seg3D_exp/backend/__pycache__/
+seg3D_exp/backend/*.pyc
+
+# Seg3D backend outputs
+seg3D_exp/backend/runs/
+seg3D_exp/backend/results/
+seg3D_exp/backend/*.log

@@ -210,7 +210,6 @@ if (imageInput) {
       const img = document.createElement('img');
       img.src = thumbUrl;
       img.alt = file.name;
-      img.onload = () => URL.revokeObjectURL(thumbUrl);
       imagePreviews.appendChild(img);
       if (index === 0) {
         if (imagePreviewMain) {
@@ -220,7 +219,6 @@ if (imageInput) {
           previewUrls.push(mainUrl);
           mainImg.src = mainUrl;
           mainImg.alt = file.name;
-          mainImg.onload = () => URL.revokeObjectURL(mainUrl);
           imagePreviewMain.appendChild(mainImg);
         }
         setBackgroundFromFile(file);
