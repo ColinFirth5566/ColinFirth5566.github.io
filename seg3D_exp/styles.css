@@ -141,6 +141,18 @@ body {
   transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
 }
 
+.primary-btn {
+  background: var(--accent);
+  color: #fdf8ef;
+  box-shadow: 0 10px 24px rgba(44, 107, 95, 0.3);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .secondary-btn {
   background: #fef7ea;
   color: var(--accent);

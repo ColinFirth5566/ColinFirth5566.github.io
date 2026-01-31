@@ -1,9 +1,12 @@
-const meshInput = document.getElementById('mesh-input');
+const BACKEND_URL = 'http://localhost:8000';
+
 const imageInput = document.getElementById('image-input');
 const imagePreviews = document.getElementById('image-previews');
 const imagePreviewMain = document.getElementById('image-preview-main');
 const imageCount = document.getElementById('image-count');
-const fileName = document.getElementById('file-name');
+const backendUrl = document.getElementById('backend-url');
+const runBtn = document.getElementById('run-seg3d');
+const runStatus = document.getElementById('run-status');
 const viewerCanvas = document.getElementById('viewer-canvas');
 const viewerStatus = document.getElementById('viewer-status');
 const resetViewBtn = document.getElementById('reset-view');
@@ -11,6 +14,11 @@ const clearViewBtn = document.getElementById('clear-view');
 
 const threeAvailable = Boolean(window.THREE && window.THREE.Scene);
 let viewerState = null;
+let selectedImages = [];
+let previewUrls = [];
+let pollTimer = null;
+
+if (backendUrl) backendUrl.textContent = BACKEND_URL;
 
 const initViewer = () => {
   if (!viewerCanvas || !threeAvailable) {
@@ -109,13 +117,12 @@ const clearViewerObject = () => {
   if (viewerStatus) viewerStatus.textContent = 'No mesh loaded.';
 };
 
-const loadMeshFile = (file) => {
-  if (!file || !viewerState || !viewerState.scene) return;
+const loadMeshFromUrl = (url) => {
+  if (!url || !viewerState || !viewerState.scene) return;
 
   clearViewerObject();
   if (viewerStatus) viewerStatus.textContent = 'Loading mesh...';
 
-  const url = URL.createObjectURL(file);
   const loader = new THREE.GLTFLoader();
   loader.load(
     url,
@@ -124,12 +131,10 @@ const loadMeshFile = (file) => {
       viewerState.scene.add(viewerState.currentObject);
       frameObject(viewerState.currentObject);
       if (viewerStatus) viewerStatus.textContent = 'Mesh loaded.';
-      URL.revokeObjectURL(url);
     },
     undefined,
     () => {
       if (viewerStatus) viewerStatus.textContent = 'Failed to load mesh.';
-      URL.revokeObjectURL(url);
     }
   );
 };
@@ -153,6 +158,9 @@ const setBackgroundFromFile = (file) => {
 
 const clearImages = () => {
   if (imageInput) imageInput.value = '';
+  selectedImages = [];
+  previewUrls.forEach((url) => URL.revokeObjectURL(url));
+  previewUrls = [];
   if (imagePreviews) {
     imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
   }
@@ -165,24 +173,20 @@ const clearImages = () => {
   if (viewerState && viewerState.scene) {
     viewerState.scene.background = null;
   }
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  if (runBtn) runBtn.disabled = true;
+  if (runStatus) runStatus.textContent = 'Idle.';
 };
-
-if (meshInput) {
-  meshInput.addEventListener('change', (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    if (fileName) fileName.textContent = file.name;
-    if (!threeAvailable) {
-      if (viewerStatus) viewerStatus.textContent = 'Three.js failed to load.';
-      return;
-    }
-    loadMeshFile(file);
-  });
-}
 
 if (imageInput) {
   imageInput.addEventListener('change', (event) => {
     const files = Array.from(event.target.files || []);
+    selectedImages = files;
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    previewUrls = [];
     if (!imagePreviews) return;
 
     imagePreviews.innerHTML = '';
@@ -192,6 +196,7 @@ if (imageInput) {
     if (imageCount) {
       imageCount.textContent = String(files.length);
     }
+    if (runBtn) runBtn.disabled = files.length === 0;
 
     if (!files.length) {
       imagePreviews.innerHTML = '<span class="muted small">No images selected.</span>';
@@ -201,6 +206,7 @@ if (imageInput) {
 
     files.slice(0, 8).forEach((file, index) => {
       const thumbUrl = URL.createObjectURL(file);
+      previewUrls.push(thumbUrl);
       const img = document.createElement('img');
       img.src = thumbUrl;
       img.alt = file.name;
@@ -211,6 +217,7 @@ if (imageInput) {
           imagePreviewMain.innerHTML = '';
           const mainImg = document.createElement('img');
           const mainUrl = URL.createObjectURL(file);
+          previewUrls.push(mainUrl);
           mainImg.src = mainUrl;
           mainImg.alt = file.name;
           mainImg.onload = () => URL.revokeObjectURL(mainUrl);
@@ -233,11 +240,90 @@ if (resetViewBtn) {
 
 if (clearViewBtn) {
   clearViewBtn.addEventListener('click', () => {
-    if (meshInput) meshInput.value = '';
-    if (fileName) fileName.textContent = 'No file selected.';
     clearViewerObject();
     clearImages();
   });
+}
+
+const setRunStatus = (text) => {
+  if (runStatus) runStatus.textContent = text;
+};
+
+const normalizeUrl = (url) => {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${BACKEND_URL}${url}`;
+  return `${BACKEND_URL}/${url}`;
+};
+
+const pollStatus = async (statusUrl) => {
+  try {
+    const response = await fetch(normalizeUrl(statusUrl));
+    if (!response.ok) throw new Error('status failed');
+    const payload = await response.json();
+    const status = (payload.status || '').toLowerCase();
+    const meshUrl = normalizeUrl(payload.mesh_url || payload.result_url || payload.glb_url || payload.url);
+
+    if (status === 'failed') {
+      setRunStatus(payload.message || 'Seg3D failed.');
+      return;
+    }
+
+    if (status === 'done' || status === 'succeeded' || meshUrl) {
+      setRunStatus('Complete. Loading mesh...');
+      if (meshUrl) loadMeshFromUrl(meshUrl);
+      return;
+    }
+
+    setRunStatus(payload.message || 'Running...');
+    pollTimer = setTimeout(() => pollStatus(statusUrl), 2000);
+  } catch (error) {
+    setRunStatus('Could not reach backend.');
+  }
+};
+
+const runSeg3D = async () => {
+  if (!selectedImages.length) return;
+  if (window.location.protocol === 'https:' && BACKEND_URL.startsWith('http://')) {
+    setRunStatus('Blocked by browser (HTTPS → HTTP). Open the site locally or use HTTPS for the backend.');
+    return;
+  }
+  if (runBtn) runBtn.disabled = true;
+  setRunStatus('Uploading images...');
+
+  const form = new FormData();
+  selectedImages.forEach((file) => {
+    form.append('images', file, file.name);
+  });
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/run`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!response.ok) throw new Error('submit failed');
+    const payload = await response.json();
+    const meshUrl = normalizeUrl(payload.mesh_url || payload.result_url || payload.glb_url || payload.url);
+    if (meshUrl) {
+      setRunStatus('Complete. Loading mesh...');
+      loadMeshFromUrl(meshUrl);
+      return;
+    }
+    const jobId = payload.job_id || payload.jobId || payload.id;
+    if (!jobId) throw new Error('no job id');
+    const statusUrl = normalizeUrl(payload.status_url || `/status/${jobId}`);
+    setRunStatus(`Queued (${jobId}).`);
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => pollStatus(statusUrl), 1500);
+  } catch (error) {
+    setRunStatus('Submit failed. Check backend URL.');
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+};
+
+if (runBtn) {
+  runBtn.addEventListener('click', runSeg3D);
 }
 
 initViewer();
