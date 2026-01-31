@@ -17,6 +17,7 @@
     <nav>
       <a href="#pipeline">Pipeline</a>
       <a href="#generator">Command Builder</a>
+      <a href="#viewer">Viewer</a>
       <a href="#results">Results</a>
       <a href="#deploy">Deploy</a>
     </nav>
@@ -34,6 +35,7 @@
         </p>
         <div class="hero-actions">
           <a class="primary-btn" href="#generator">Generate command</a>
+          <a class="secondary-btn" href="#viewer">Open viewer</a>
           <a class="secondary-btn" href="#deploy">Publish to GitHub Pages</a>
         </div>
         <div class="hero-metrics">
@@ -193,6 +195,40 @@
       </div>
     </section>
 
+    <section class="section" id="viewer">
+      <div class="section-heading">
+        <h2>Seg3D viewer</h2>
+        <p>Upload input images and preview Seg3D meshes directly in the browser.</p>
+      </div>
+      <div class="viewer-grid">
+        <article class="card viewer-controls">
+          <h3>Upload files</h3>
+          <label>
+            Input images (jpg/png)
+            <input type="file" id="input-images" accept="image/*" multiple />
+          </label>
+          <div class="image-previews" id="image-previews">
+            <span class="muted small">No images loaded yet.</span>
+          </div>
+          <label>
+            Seg3D output mesh (.glb, .ply, .obj)
+            <input type="file" id="mesh-file" accept=".glb,.gltf,.ply,.obj" />
+          </label>
+          <p class="muted small" id="mesh-status">No mesh loaded.</p>
+          <div class="viewer-actions">
+            <button class="secondary-btn" type="button" id="reset-view">Reset view</button>
+            <button class="inline-btn" type="button" id="clear-view">Clear</button>
+          </div>
+          <p class="muted small">Files stay in your browser; nothing is uploaded to a server.</p>
+          <p class="muted small">Tip: Use .glb or .ply for single-file loading.</p>
+        </article>
+        <article class="card viewer-stage">
+          <div class="viewer-canvas" id="viewer-canvas"></div>
+          <div class="viewer-overlay">Drag to orbit • Scroll to zoom • Right-drag to pan</div>
+        </article>
+      </div>
+    </section>
+
     <section class="section" id="results">
       <div class="section-heading">
         <h2>Experiment snapshots</h2>
@@ -279,6 +315,11 @@ git push origin main</pre>
     <p>Seg3D Run Lab • Built for fast experiment reporting</p>
   </footer>
 
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/PLYLoader.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/OBJLoader.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
