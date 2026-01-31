@@ -3,323 +3,77 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Seg3D Run Lab</title>
-  <meta name="description" content="Run, tune, and publish Meta Seg3D experiments with a clean, focused workflow." />
+  <title>Seg3D Studio</title>
+  <meta name="description" content="Upload a JPG, draw a contour, and preview Seg3D results in 3D." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="grain" aria-hidden="true"></div>
   <header class="site-header">
-    <div class="logo">Seg3D <span>Lab</span></div>
-    <nav>
-      <a href="#pipeline">Pipeline</a>
-      <a href="#generator">Command Builder</a>
-      <a href="#viewer">Viewer</a>
-      <a href="#results">Results</a>
-      <a href="#deploy">Deploy</a>
-    </nav>
-    <a class="ghost-btn" href="#generator">Run Seg3D</a>
+    <div class="brand">
+      <div class="logo">Seg3D Studio</div>
+      <p class="tagline">Upload JPG → draw contour → run Seg3D → preview 3D result</p>
+    </div>
+    <div class="status-pill" id="job-status">Idle</div>
   </header>
 
-  <main>
-    <section class="hero" id="top">
-      <div class="hero-text">
-        <p class="eyebrow">Meta Seg3D experiment hub</p>
-        <h1>Turn multi-view captures into structured 3D segmentation outputs.</h1>
-        <p class="lead">
-          A focused landing page and run console for Meta Seg3D. Generate consistent
-          commands, track outputs, and publish your experiment snapshots.
-        </p>
-        <div class="hero-actions">
-          <a class="primary-btn" href="#generator">Generate command</a>
-          <a class="secondary-btn" href="#viewer">Open viewer</a>
-          <a class="secondary-btn" href="#deploy">Publish to GitHub Pages</a>
-        </div>
-        <div class="hero-metrics">
-          <div>
-            <span class="metric-label">Inputs</span>
-            <span class="metric-value">Multi-view frames + calibration</span>
-          </div>
-          <div>
-            <span class="metric-label">Outputs</span>
-            <span class="metric-value">Segmented volume / mesh (configurable)</span>
-          </div>
-          <div>
-            <span class="metric-label">Runtime</span>
-            <span class="metric-value">GPU dependent (tunable)</span>
-          </div>
-        </div>
+  <main class="workspace">
+    <section class="panel" aria-labelledby="upload-title">
+      <div class="panel-head">
+        <h2 id="upload-title">1. Upload + contour</h2>
+        <p class="muted">Select a JPG and click to outline the object contour.</p>
       </div>
-      <div class="hero-panel">
-        <div class="panel-card">
-          <h3>Run status</h3>
-          <p class="muted">Template dashboard for your Seg3D job history.</p>
-          <ul>
-            <li><span>weights</span><strong>seg3d_v1.ckpt</strong></li>
-            <li><span>device</span><strong>cuda:0</strong></li>
-            <li><span>job</span><strong>kitchen_scan_07</strong></li>
-            <li><span>export</span><strong>mesh + volume</strong></li>
-          </ul>
-          <div class="status-pill">Ready to queue</div>
-        </div>
-        <div class="panel-card accent">
-          <h3>Latest snapshot</h3>
-          <p class="muted">Log the experiment notes and outputs you want to share.</p>
-          <div class="snapshot">
-            <div>
-              <span>Scene</span>
-              <strong>Workspace 3B</strong>
-            </div>
-            <div>
-              <span>IoU (est.)</span>
-              <strong>0.71</strong>
-            </div>
-            <div>
-              <span>Artifacts</span>
-              <strong>mesh_v6.ply</strong>
-            </div>
-          </div>
-          <button class="inline-btn" type="button">Open logbook</button>
-        </div>
+
+      <label class="file-field">
+        <span>Input image (jpg/png)</span>
+        <input type="file" id="image-input" accept="image/jpeg,image/png" />
+      </label>
+
+      <div class="canvas-wrap">
+        <canvas id="roi-canvas"></canvas>
+        <div class="canvas-hint">Click to add points. Double-click or press Close to finish.</div>
+      </div>
+
+      <div class="roi-actions">
+        <button class="secondary-btn" type="button" id="undo-point">Undo point</button>
+        <button class="secondary-btn" type="button" id="clear-points">Clear</button>
+        <button class="secondary-btn" type="button" id="close-polygon">Close contour</button>
+      </div>
+
+      <div class="submit-row">
+        <button class="primary-btn" type="button" id="submit-job" disabled>Run Seg3D</button>
+        <span class="muted small" id="roi-status">No contour yet.</span>
+      </div>
+
+      <div class="status-box">
+        <p class="status-line">Job detail: <span id="job-detail">Waiting for image.</span></p>
+        <p class="muted small">Files are sent to your Seg3D backend. Ensure CORS is enabled.</p>
       </div>
     </section>
 
-    <section class="section" id="pipeline">
-      <div class="section-heading">
-        <h2>Pipeline overview</h2>
-        <p>Align your capture data, run Seg3D, and export structured 3D assets.</p>
+    <section class="panel" aria-labelledby="viewer-title">
+      <div class="panel-head">
+        <h2 id="viewer-title">2. 3D result</h2>
+        <p class="muted">Mesh output loads here once the job is complete.</p>
       </div>
-      <div class="grid three">
-        <article class="card">
-          <h3>1. Prepare inputs</h3>
-          <p>Normalize frames, align camera poses, and verify calibration files.</p>
-          <ul class="mini">
-            <li>Frame folders</li>
-            <li>Camera intrinsics</li>
-            <li>Scene metadata</li>
-          </ul>
-        </article>
-        <article class="card">
-          <h3>2. Run segmentation</h3>
-          <p>Execute the model with tuned thresholds and grid resolution.</p>
-          <ul class="mini">
-            <li>GPU selection</li>
-            <li>Precision mode</li>
-            <li>Chunk sizing</li>
-          </ul>
-        </article>
-        <article class="card">
-          <h3>3. Export assets</h3>
-          <p>Publish meshes or volumes to share, inspect, or visualize in tools.</p>
-          <ul class="mini">
-            <li>PLY / OBJ / VDB</li>
-            <li>Preview renders</li>
-            <li>Run notes</li>
-          </ul>
-        </article>
-      </div>
-    </section>
 
-    <section class="section" id="generator">
-      <div class="section-heading">
-        <h2>Command builder</h2>
-        <p>Generate a consistent command line. Update flags to match your repo.</p>
+      <div class="viewer" id="viewer-canvas"></div>
+      <div class="viewer-actions">
+        <button class="secondary-btn" type="button" id="reset-view">Reset view</button>
       </div>
-      <div class="builder">
-        <div class="builder-form">
-          <label>
-            Dataset path
-            <input type="text" name="data" value="/data/seg3d/scans/kitchen_07" />
-          </label>
-          <label>
-            Output directory
-            <input type="text" name="output" value="/runs/seg3d/kitchen_07" />
-          </label>
-          <label>
-            Device
-            <select name="device">
-              <option value="cuda:0">cuda:0</option>
-              <option value="cuda:1">cuda:1</option>
-              <option value="mps">mps</option>
-              <option value="cpu">cpu</option>
-            </select>
-          </label>
-          <label>
-            Precision
-            <select name="precision">
-              <option value="fp16">fp16</option>
-              <option value="bf16">bf16</option>
-              <option value="fp32">fp32</option>
-            </select>
-          </label>
-          <div class="two-col">
-            <label>
-              Grid resolution
-              <input type="number" name="grid" value="256" min="64" max="1024" />
-            </label>
-            <label>
-              Threshold
-              <input type="number" name="threshold" value="0.35" step="0.01" min="0" max="1" />
-            </label>
-          </div>
-          <label>
-            Export format
-            <select name="format">
-              <option value="mesh">mesh</option>
-              <option value="volume">volume</option>
-              <option value="mesh+volume">mesh + volume</option>
-            </select>
-          </label>
-          <button class="primary-btn" type="button" id="regen">Refresh command</button>
-          <p class="muted small">Note: `run_seg3d.py` and flags are templates. Replace with your actual entrypoint.</p>
-        </div>
-        <div class="builder-output">
-          <div class="output-header">
-            <h3>Generated command</h3>
-            <button class="inline-btn" type="button" data-copy="command">Copy</button>
-          </div>
-          <pre id="command" class="code"></pre>
-          <div class="output-header">
-            <h3>Quickstart checklist</h3>
-          </div>
-          <ul class="checklist">
-            <li>Activate the Seg3D environment</li>
-            <li>Download model weights into your checkpoints folder</li>
-            <li>Validate calibration + frame ordering</li>
-            <li>Run the command and log metrics</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="viewer">
-      <div class="section-heading">
-        <h2>Seg3D viewer</h2>
-        <p>Upload input images and preview Seg3D meshes directly in the browser.</p>
-      </div>
-      <div class="viewer-grid">
-        <article class="card viewer-controls">
-          <h3>Upload files</h3>
-          <label>
-            Input images (jpg/png)
-            <input type="file" id="input-images" accept="image/*" multiple />
-          </label>
-          <div class="image-previews" id="image-previews">
-            <span class="muted small">No images loaded yet.</span>
-          </div>
-          <label>
-            Seg3D output mesh (.glb, .ply, .obj)
-            <input type="file" id="mesh-file" accept=".glb,.gltf,.ply,.obj" />
-          </label>
-          <p class="muted small" id="mesh-status">No mesh loaded.</p>
-          <div class="viewer-actions">
-            <button class="secondary-btn" type="button" id="reset-view">Reset view</button>
-            <button class="inline-btn" type="button" id="clear-view">Clear</button>
-          </div>
-          <p class="muted small">Files stay in your browser; nothing is uploaded to a server.</p>
-          <p class="muted small">Tip: Use .glb or .ply for single-file loading.</p>
-        </article>
-        <article class="card viewer-stage">
-          <div class="viewer-canvas" id="viewer-canvas"></div>
-          <div class="viewer-overlay">Drag to orbit • Scroll to zoom • Right-drag to pan</div>
-        </article>
-      </div>
-    </section>
-
-    <section class="section" id="results">
-      <div class="section-heading">
-        <h2>Experiment snapshots</h2>
-        <p>Use this space to show run notes, metrics, and quick previews.</p>
-      </div>
-      <div class="grid two">
-        <article class="card highlight">
-          <h3>Run log</h3>
-          <p class="muted">Add a short markdown summary to each experiment.</p>
-          <pre class="code small"># kitchen_07
-- model: seg3d_v1
-- grid: 256
-- threshold: 0.35
-- notes: strong walls, thin chairs
-          </pre>
-        </article>
-        <article class="card">
-          <h3>Export notes</h3>
-          <p class="muted">Publish your best outputs to a static folder.</p>
-          <div class="export-list">
-            <div>
-              <span>mesh</span>
-              <strong>mesh_v6.ply</strong>
-            </div>
-            <div>
-              <span>volume</span>
-              <strong>occ_v6.vdb</strong>
-            </div>
-            <div>
-              <span>preview</span>
-              <strong>overview.png</strong>
-            </div>
-          </div>
-          <button class="secondary-btn" type="button">Open artifacts</button>
-        </article>
-      </div>
-    </section>
-
-    <section class="section" id="deploy">
-      <div class="section-heading">
-        <h2>Publish to GitHub Pages</h2>
-        <p>Host this static page from your repo to share experiment status.</p>
-      </div>
-      <div class="grid three">
-        <article class="card">
-          <h3>1. Create repo</h3>
-          <p>Create a GitHub repository and add the `seg3D_exp` folder.</p>
-          <p class="muted small">Example: `seg3D_exp` or `seg3d-run-lab`.</p>
-        </article>
-        <article class="card">
-          <h3>2. Push files</h3>
-          <p>Commit `index.html`, `styles.css`, and `app.js` to the main branch.</p>
-          <pre class="code small">git add .
-git commit -m "Add Seg3D run site"
-git push origin main</pre>
-        </article>
-        <article class="card">
-          <h3>3. Enable Pages</h3>
-          <p>In GitHub: Settings → Pages → Source: main / root.</p>
-          <p class="muted small">Your site appears at `https://&lt;user&gt;.github.io/&lt;repo&gt;`.</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="section" id="faq">
-      <div class="section-heading">
-        <h2>FAQ</h2>
-        <p>Quick reminders when wiring Seg3D into your workflow.</p>
-      </div>
-      <div class="grid two">
-        <article class="card">
-          <h3>Does this page run the model?</h3>
-          <p>No. It is a static dashboard. Use it to generate commands and share results.</p>
-        </article>
-        <article class="card">
-          <h3>Where do logs live?</h3>
-          <p>Keep run notes in your repo and push updates when you publish new results.</p>
-        </article>
-      </div>
+      <p class="muted small" id="viewer-status">No mesh loaded.</p>
     </section>
   </main>
 
   <footer class="site-footer">
-    <p>Seg3D Run Lab • Built for fast experiment reporting</p>
+    <p>Seg3D Studio • Simple frontend for Seg3D REST APIs</p>
   </footer>
 
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/PLYLoader.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/OBJLoader.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

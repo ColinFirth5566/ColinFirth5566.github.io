@@ -1,19 +1,34 @@
-# Seg3D Run Lab
+# Seg3D Studio
 
-Static website for sharing Meta Seg3D experiment runs. Update the copy, command builder flags, and run notes to match your repo.
+Simple frontend for a Seg3D backend: upload a JPG, draw a contour, run Seg3D, and preview the resulting GLB in Three.js.
 
 ## Files
 - `index.html`
 - `styles.css`
 - `app.js`
 
-## Publish to GitHub Pages
-1. Create a GitHub repo.
-2. Push this folder to the repo root.
-3. In GitHub: Settings → Pages → Source = `main` / root.
-4. Visit: `https://<user>.github.io/<repo>`.
+## Configure the backend
+Edit `app.js` and update `API_CONFIG`:
 
-## Customize
-- Update the command builder in `app.js` to match your real CLI flags.
-- Replace the placeholder metrics and run logs in `index.html`.
-- Adjust colors and fonts in `styles.css`.
+```
+const API_CONFIG = {
+  baseUrl: 'https://api.yfcosmos.com',
+  submitPath: '/seg3d',
+  statusPath: '/seg3d/status',
+  pollIntervalMs: 2000,
+};
+```
+
+Expected backend behavior:
+- `POST {baseUrl}{submitPath}` accepts multipart form:
+  - `image`: the JPG/PNG file
+  - `contour`: JSON string with `{ points: [{x,y}], width, height }`
+- Response returns either:
+  - `mesh_url` (or `result_url` / `glb_url`) for direct download, OR
+  - `job_id` plus optional `status_url`
+- `GET {baseUrl}{statusPath}/{job_id}` returns JSON with:
+  - `status`: `queued|running|done|failed`
+  - `mesh_url` when done
+
+## CORS
+Your backend must allow cross-origin requests from `https://yfcosmos.com` and `https://colinfirth5566.github.io`.

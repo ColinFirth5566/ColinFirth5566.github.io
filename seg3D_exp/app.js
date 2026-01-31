@@ -1,351 +1,442 @@
-const form = document.querySelector('.builder-form');
-const commandEl = document.getElementById('command');
-const regenBtn = document.getElementById('regen');
-
-const revealTargets = document.querySelectorAll('.hero, .section, .site-footer');
-
-const buildCommand = () => {
-  const data = form.querySelector('[name="data"]').value.trim() || '/path/to/data';
-  const output = form.querySelector('[name="output"]').value.trim() || '/path/to/output';
-  const device = form.querySelector('[name="device"]').value;
-  const precision = form.querySelector('[name="precision"]').value;
-  const grid = form.querySelector('[name="grid"]').value;
-  const threshold = form.querySelector('[name="threshold"]').value;
-  const format = form.querySelector('[name="format"]').value;
-
-  const exports = format === 'mesh+volume' ? ['mesh', 'volume'] : [format];
-  const exportFlags = exports.map((item) => `--export ${item}`).join(' ');
-
-  return [
-    'python run_seg3d.py',
-    `--data "${data}"`,
-    `--out "${output}"`,
-    `--device ${device}`,
-    `--precision ${precision}`,
-    `--grid ${grid}`,
-    `--threshold ${threshold}`,
-    exportFlags,
-  ].join(' \\\n  ');
+const API_CONFIG = {
+  baseUrl: 'https://api.yfcosmos.com',
+  submitPath: '/seg3d',
+  statusPath: '/seg3d/status',
+  pollIntervalMs: 2000,
 };
 
-const updateCommand = () => {
-  commandEl.textContent = buildCommand();
+const imageInput = document.getElementById('image-input');
+const roiCanvas = document.getElementById('roi-canvas');
+const jobStatus = document.getElementById('job-status');
+const jobDetail = document.getElementById('job-detail');
+const roiStatus = document.getElementById('roi-status');
+const submitBtn = document.getElementById('submit-job');
+const undoBtn = document.getElementById('undo-point');
+const clearBtn = document.getElementById('clear-points');
+const closeBtn = document.getElementById('close-polygon');
+const viewerCanvas = document.getElementById('viewer-canvas');
+const viewerStatus = document.getElementById('viewer-status');
+const resetViewBtn = document.getElementById('reset-view');
+
+const ctx = roiCanvas.getContext('2d');
+let imageFile = null;
+let imageObj = null;
+let contourPoints = [];
+let contourClosed = false;
+let drawRect = null;
+let canvasSize = { width: 0, height: 0 };
+let pollTimer = null;
+
+const setStatus = (pill, detail) => {
+  if (jobStatus) jobStatus.textContent = pill;
+  if (jobDetail) jobDetail.textContent = detail;
 };
 
-const copyCommand = async (targetId, button) => {
-  const target = document.getElementById(targetId);
-  if (!target) return;
+const updateRoiStatus = () => {
+  if (!roiStatus) return;
+  if (!imageObj) {
+    roiStatus.textContent = 'No contour yet.';
+    return;
+  }
+  if (!contourPoints.length) {
+    roiStatus.textContent = 'Click to add contour points.';
+    return;
+  }
+  const state = contourClosed ? 'closed' : 'open';
+  roiStatus.textContent = `${contourPoints.length} points (${state}).`;
+};
 
+const updateSubmitState = () => {
+  if (!submitBtn) return;
+  submitBtn.disabled = !(imageObj && contourPoints.length >= 3);
+};
+
+const resizeCanvas = () => {
+  const rect = roiCanvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = window.devicePixelRatio || 1;
+  roiCanvas.width = rect.width * ratio;
+  roiCanvas.height = rect.height * ratio;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  canvasSize = { width: rect.width, height: rect.height };
+  computeDrawRect();
+  drawCanvas();
+};
+
+const computeDrawRect = () => {
+  if (!imageObj) {
+    drawRect = null;
+    return;
+  }
+  const imgW = imageObj.naturalWidth;
+  const imgH = imageObj.naturalHeight;
+  const scale = Math.min(canvasSize.width / imgW, canvasSize.height / imgH);
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  const offsetX = (canvasSize.width - drawW) / 2;
+  const offsetY = (canvasSize.height - drawH) / 2;
+  drawRect = { offsetX, offsetY, drawW, drawH, scale, imgW, imgH };
+};
+
+const canvasToImage = (x, y) => {
+  if (!drawRect) return null;
+  const withinX = x >= drawRect.offsetX && x <= drawRect.offsetX + drawRect.drawW;
+  const withinY = y >= drawRect.offsetY && y <= drawRect.offsetY + drawRect.drawH;
+  if (!withinX || !withinY) return null;
+  return {
+    x: (x - drawRect.offsetX) / drawRect.scale,
+    y: (y - drawRect.offsetY) / drawRect.scale,
+  };
+};
+
+const imageToCanvas = (point) => {
+  if (!drawRect) return { x: 0, y: 0 };
+  return {
+    x: point.x * drawRect.scale + drawRect.offsetX,
+    y: point.y * drawRect.scale + drawRect.offsetY,
+  };
+};
+
+const drawCanvas = () => {
+  ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
+  if (!imageObj || !drawRect) return;
+
+  ctx.drawImage(
+    imageObj,
+    drawRect.offsetX,
+    drawRect.offsetY,
+    drawRect.drawW,
+    drawRect.drawH
+  );
+
+  if (!contourPoints.length) return;
+
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#2c6b5f';
+  ctx.fillStyle = 'rgba(44, 107, 95, 0.15)';
+
+  ctx.beginPath();
+  contourPoints.forEach((point, index) => {
+    const canvasPoint = imageToCanvas(point);
+    if (index === 0) {
+      ctx.moveTo(canvasPoint.x, canvasPoint.y);
+    } else {
+      ctx.lineTo(canvasPoint.x, canvasPoint.y);
+    }
+  });
+  if (contourClosed) ctx.closePath();
+  ctx.stroke();
+  if (contourClosed) ctx.fill();
+
+  contourPoints.forEach((point) => {
+    const canvasPoint = imageToCanvas(point);
+    ctx.beginPath();
+    ctx.arc(canvasPoint.x, canvasPoint.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#f6c177';
+    ctx.fill();
+    ctx.strokeStyle = '#1d2320';
+    ctx.stroke();
+  });
+
+  ctx.restore();
+};
+
+const loadImage = (file) => {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    imageObj = img;
+    imageFile = file;
+    contourPoints = [];
+    contourClosed = false;
+    computeDrawRect();
+    drawCanvas();
+    updateRoiStatus();
+    updateSubmitState();
+    setStatus('Ready', 'Draw contour points on the image.');
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => {
+    setStatus('Error', 'Could not load image.');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+};
+
+const closeContour = () => {
+  if (contourPoints.length < 3) return;
+  contourClosed = true;
+  drawCanvas();
+  updateRoiStatus();
+};
+
+const clearContour = () => {
+  contourPoints = [];
+  contourClosed = false;
+  drawCanvas();
+  updateRoiStatus();
+  updateSubmitState();
+};
+
+const buildContourPayload = () => {
+  if (!drawRect) return { points: [] };
+  return {
+    points: contourPoints.map((point) => ({
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+    })),
+    width: drawRect.imgW,
+    height: drawRect.imgH,
+  };
+};
+
+const extractJobId = (payload) => payload.job_id || payload.jobId || payload.id;
+
+const extractMeshUrl = (payload) =>
+  payload.mesh_url || payload.result_url || payload.glb_url || payload.url;
+
+const buildStatusUrl = (jobId, payload) =>
+  payload.status_url || `${API_CONFIG.baseUrl}${API_CONFIG.statusPath}/${jobId}`;
+
+const pollStatus = async (statusUrl) => {
   try {
-    await navigator.clipboard.writeText(target.textContent);
-    const original = button.textContent;
-    button.textContent = 'Copied';
-    setTimeout(() => {
-      button.textContent = original;
-    }, 1400);
-  } catch (err) {
-    button.textContent = 'Copy failed';
+    const response = await fetch(statusUrl);
+    if (!response.ok) throw new Error('Failed to poll status');
+    const payload = await response.json();
+
+    const status = (payload.status || payload.state || '').toLowerCase();
+    const meshUrl = extractMeshUrl(payload);
+
+    if (status === 'failed') {
+      setStatus('Failed', payload.message || 'Seg3D job failed.');
+      return;
+    }
+
+    if (status === 'done' || status === 'succeeded' || meshUrl) {
+      setStatus('Complete', 'Mesh ready.');
+      if (meshUrl) {
+        loadMesh(meshUrl);
+      }
+      return;
+    }
+
+    setStatus('Running', payload.message || 'Seg3D running...');
+    pollTimer = setTimeout(() => pollStatus(statusUrl), API_CONFIG.pollIntervalMs);
+  } catch (error) {
+    setStatus('Error', 'Could not reach backend. Check API URL and CORS.');
   }
 };
 
-const observer = new IntersectionObserver(
-  (entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        observer.unobserve(entry.target);
-      }
+const submitJob = async () => {
+  if (!imageFile || contourPoints.length < 3) return;
+  if (!contourClosed) closeContour();
+
+  setStatus('Uploading', 'Sending image + contour to Seg3D.');
+  submitBtn.disabled = true;
+
+  const form = new FormData();
+  form.append('image', imageFile);
+  form.append('contour', JSON.stringify(buildContourPayload()));
+
+  try {
+    const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.submitPath}`, {
+      method: 'POST',
+      body: form,
     });
-  },
-  { threshold: 0.15 }
-);
 
-revealTargets.forEach((target) => {
-  target.classList.add('reveal');
-  observer.observe(target);
+    if (!response.ok) throw new Error('Submit failed');
+    const payload = await response.json();
+    const meshUrl = extractMeshUrl(payload);
+
+    if (meshUrl) {
+      setStatus('Complete', 'Mesh ready.');
+      loadMesh(meshUrl);
+      submitBtn.disabled = false;
+      return;
+    }
+
+    const jobId = extractJobId(payload);
+    if (!jobId) throw new Error('No job id returned');
+
+    const statusUrl = buildStatusUrl(jobId, payload);
+    setStatus('Queued', `Job ${jobId} queued.`);
+
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => pollStatus(statusUrl), API_CONFIG.pollIntervalMs);
+  } catch (error) {
+    setStatus('Error', 'Submit failed. Check API URL and response format.');
+  } finally {
+    submitBtn.disabled = false;
+  }
+};
+
+roiCanvas.addEventListener('click', (event) => {
+  if (!imageObj || contourClosed) return;
+  const point = canvasToImage(event.offsetX, event.offsetY);
+  if (!point) return;
+  contourPoints.push(point);
+  drawCanvas();
+  updateRoiStatus();
+  updateSubmitState();
 });
 
-form.addEventListener('input', updateCommand);
-regenBtn.addEventListener('click', updateCommand);
-
-const copyButtons = document.querySelectorAll('[data-copy]');
-copyButtons.forEach((button) => {
-  button.addEventListener('click', () => copyCommand(button.dataset.copy, button));
+roiCanvas.addEventListener('dblclick', (event) => {
+  event.preventDefault();
+  closeContour();
 });
 
-const viewerCanvas = document.getElementById('viewer-canvas');
-const imageInput = document.getElementById('input-images');
-const meshInput = document.getElementById('mesh-file');
-const meshStatus = document.getElementById('mesh-status');
-const imagePreviews = document.getElementById('image-previews');
-const resetViewBtn = document.getElementById('reset-view');
-const clearViewBtn = document.getElementById('clear-view');
+imageInput.addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  loadImage(file);
+});
 
-if (viewerCanvas && window.THREE) {
+undoBtn.addEventListener('click', () => {
+  contourPoints.pop();
+  contourClosed = false;
+  drawCanvas();
+  updateRoiStatus();
+  updateSubmitState();
+});
+
+clearBtn.addEventListener('click', clearContour);
+closeBtn.addEventListener('click', closeContour);
+submitBtn.addEventListener('click', submitJob);
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+updateRoiStatus();
+updateSubmitState();
+
+if (!viewerCanvas || !window.THREE) {
+  if (viewerStatus) viewerStatus.textContent = 'Three.js failed to load.';
+}
+
+const viewerState = {
+  renderer: null,
+  scene: null,
+  camera: null,
+  controls: null,
+  currentObject: null,
+  homePosition: new THREE.Vector3(2.5, 2, 3.5),
+  homeTarget: new THREE.Vector3(0, 0, 0),
+};
+
+const initViewer = () => {
+  if (!viewerCanvas || !window.THREE) return;
+
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
   viewerCanvas.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.65);
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
-  keyLight.position.set(5, 6, 4);
-  const fillLight = new THREE.DirectionalLight(0xfff1d6, 0.35);
-  fillLight.position.set(-4, 3, -2);
-  scene.add(ambient, keyLight, fillLight);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(6, 6, 4);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xfff1d6, 0.35);
+  fill.position.set(-4, 2, -2);
+  scene.add(fill);
 
-  const grid = new THREE.GridHelper(8, 16, 0x395047, 0x24332d);
-  grid.material.opacity = 0.35;
+  const grid = new THREE.GridHelper(6, 12, 0x395047, 0x24332d);
+  grid.material.opacity = 0.3;
   grid.material.transparent = true;
   scene.add(grid);
 
-  let currentObject = null;
-  let homePosition = new THREE.Vector3(2.5, 2, 3.5);
-  let homeTarget = new THREE.Vector3(0, 0, 0);
+  camera.position.copy(viewerState.homePosition);
+  controls.target.copy(viewerState.homeTarget);
+  controls.update();
 
-  const resizeRenderer = () => {
-    const { width, height } = viewerCanvas.getBoundingClientRect();
-    if (!width || !height) return;
-    renderer.setSize(width, height);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-  };
-
-  const setHome = () => {
-    homePosition = camera.position.clone();
-    homeTarget = controls.target.clone();
-  };
-
-  const resetView = () => {
-    camera.position.copy(homePosition);
-    controls.target.copy(homeTarget);
-    controls.update();
-  };
-
-  const disposeMaterial = (material) => {
-    if (!material) return;
-    if (Array.isArray(material)) {
-      material.forEach((mat) => disposeMaterial(mat));
-      return;
-    }
-    if (material.map) material.map.dispose();
-    material.dispose();
-  };
-
-  const clearObject = () => {
-    if (!currentObject) return;
-    scene.remove(currentObject);
-    currentObject.traverse((child) => {
-      if (child.isMesh) {
-        child.geometry.dispose();
-        disposeMaterial(child.material);
-      }
-    });
-    currentObject = null;
-  };
-
-  const frameObject = (object) => {
-    const box = new THREE.Box3().setFromObject(object);
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    if (!isFinite(maxDim) || maxDim <= 0) {
-      return;
-    }
-
-    const fov = (camera.fov * Math.PI) / 180;
-    const distance = maxDim / (2 * Math.tan(fov / 2));
-    const direction = new THREE.Vector3(1, 0.8, 1).normalize();
-
-    camera.position.copy(center.clone().add(direction.multiplyScalar(distance * 1.6)));
-    controls.target.copy(center);
-    controls.update();
-    setHome();
-  };
-
-  const setStatus = (text, isError = false) => {
-    if (!meshStatus) return;
-    meshStatus.textContent = text;
-    meshStatus.style.color = isError ? '#c2523e' : '';
-  };
-
-  const setBackgroundFromImage = (file) => {
-    if (!file) {
-      scene.background = null;
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      url,
-      (texture) => {
-        scene.background = texture;
-        URL.revokeObjectURL(url);
-      },
-      undefined,
-      () => {
-        URL.revokeObjectURL(url);
-      }
-    );
-  };
-
-  const loadMesh = (file) => {
-    if (!file) return;
-    clearObject();
-
-    const extension = file.name.split('.').pop().toLowerCase();
-    const url = URL.createObjectURL(file);
-
-    if (extension === 'glb' || extension === 'gltf') {
-      const loader = new THREE.GLTFLoader();
-      loader.load(
-        url,
-        (gltf) => {
-          currentObject = gltf.scene;
-          scene.add(currentObject);
-          frameObject(currentObject);
-          setStatus(`Loaded ${file.name}`);
-          URL.revokeObjectURL(url);
-        },
-        undefined,
-        (err) => {
-          setStatus('Failed to load GLTF/GLB. Prefer .glb for a single file.', true);
-          URL.revokeObjectURL(url);
-        }
-      );
-      return;
-    }
-
-    if (extension === 'ply') {
-      const loader = new THREE.PLYLoader();
-      loader.load(
-        url,
-        (geometry) => {
-          geometry.computeVertexNormals();
-          const material = new THREE.MeshStandardMaterial({
-            color: 0xf6c177,
-            roughness: 0.45,
-            metalness: 0.05,
-          });
-          currentObject = new THREE.Mesh(geometry, material);
-          scene.add(currentObject);
-          frameObject(currentObject);
-          setStatus(`Loaded ${file.name}`);
-          URL.revokeObjectURL(url);
-        },
-        undefined,
-        () => {
-          setStatus('Failed to load PLY file.', true);
-          URL.revokeObjectURL(url);
-        }
-      );
-      return;
-    }
-
-    if (extension === 'obj') {
-      const loader = new THREE.OBJLoader();
-      loader.load(
-        url,
-        (object) => {
-          object.traverse((child) => {
-            if (child.isMesh) {
-              child.material = new THREE.MeshStandardMaterial({
-                color: 0xf6c177,
-                roughness: 0.5,
-                metalness: 0.05,
-              });
-            }
-          });
-          currentObject = object;
-          scene.add(currentObject);
-          frameObject(currentObject);
-          setStatus(`Loaded ${file.name}`);
-          URL.revokeObjectURL(url);
-        },
-        undefined,
-        () => {
-          setStatus('Failed to load OBJ file.', true);
-          URL.revokeObjectURL(url);
-        }
-      );
-      return;
-    }
-
-    setStatus('Unsupported file type. Use .glb, .ply, or .obj.', true);
-    URL.revokeObjectURL(url);
-  };
+  viewerState.renderer = renderer;
+  viewerState.scene = scene;
+  viewerState.camera = camera;
+  viewerState.controls = controls;
 
   const animate = () => {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
   };
-
-  resizeRenderer();
-  camera.position.copy(homePosition);
-  controls.target.copy(homeTarget);
-  controls.update();
   animate();
+  resizeViewer();
+};
 
-  window.addEventListener('resize', resizeRenderer);
+const resizeViewer = () => {
+  if (!viewerState.renderer || !viewerState.camera) return;
+  const rect = viewerCanvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  viewerState.renderer.setSize(rect.width, rect.height);
+  viewerState.camera.aspect = rect.width / rect.height;
+  viewerState.camera.updateProjectionMatrix();
+};
 
-  if (resetViewBtn) {
-    resetViewBtn.addEventListener('click', resetView);
-  }
+window.addEventListener('resize', resizeViewer);
 
-  if (clearViewBtn) {
-    clearViewBtn.addEventListener('click', () => {
-      clearObject();
-      scene.background = null;
-      setStatus('No mesh loaded.');
-      camera.position.copy(new THREE.Vector3(2.5, 2, 3.5));
-      controls.target.set(0, 0, 0);
-      controls.update();
-      setHome();
-    });
-  }
+const frameObject = (object) => {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (!isFinite(maxDim) || maxDim <= 0) return;
 
-  if (meshInput) {
-    meshInput.addEventListener('change', (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      loadMesh(file);
-    });
-  }
+  const fov = (viewerState.camera.fov * Math.PI) / 180;
+  const distance = maxDim / (2 * Math.tan(fov / 2));
+  const direction = new THREE.Vector3(1, 0.8, 1).normalize();
 
-  if (imageInput) {
-    imageInput.addEventListener('change', (event) => {
-      const files = Array.from(event.target.files || []);
-      if (!imagePreviews) return;
-      imagePreviews.innerHTML = '';
+  viewerState.camera.position.copy(center.clone().add(direction.multiplyScalar(distance * 1.6)));
+  viewerState.controls.target.copy(center);
+  viewerState.controls.update();
+  viewerState.homePosition = viewerState.camera.position.clone();
+  viewerState.homeTarget = viewerState.controls.target.clone();
+};
 
-      if (!files.length) {
-        imagePreviews.innerHTML = '<span class="muted small">No images loaded yet.</span>';
-        scene.background = null;
-        return;
-      }
+const clearViewerObject = () => {
+  if (!viewerState.currentObject) return;
+  viewerState.scene.remove(viewerState.currentObject);
+  viewerState.currentObject.traverse((child) => {
+    if (child.isMesh) {
+      child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+  });
+  viewerState.currentObject = null;
+};
 
-      files.slice(0, 6).forEach((file, index) => {
-        const url = URL.createObjectURL(file);
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = file.name;
-        img.onload = () => URL.revokeObjectURL(url);
-        imagePreviews.appendChild(img);
-        if (index === 0) {
-          setBackgroundFromImage(file);
-        }
-      });
-    });
-  }
-} else if (meshStatus) {
-  meshStatus.textContent = 'Viewer unavailable. Check that Three.js is loading.';
+const loadMesh = (url) => {
+  if (!viewerState.scene) return;
+  clearViewerObject();
+  if (viewerStatus) viewerStatus.textContent = 'Loading mesh...';
+
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    url,
+    (gltf) => {
+      viewerState.currentObject = gltf.scene;
+      viewerState.scene.add(viewerState.currentObject);
+      frameObject(viewerState.currentObject);
+      if (viewerStatus) viewerStatus.textContent = 'Mesh loaded.';
+    },
+    undefined,
+    () => {
+      if (viewerStatus) viewerStatus.textContent = 'Failed to load mesh.';
+    }
+  );
+};
+
+if (resetViewBtn) {
+  resetViewBtn.addEventListener('click', () => {
+    if (!viewerState.camera || !viewerState.controls) return;
+    viewerState.camera.position.copy(viewerState.homePosition);
+    viewerState.controls.target.copy(viewerState.homeTarget);
+    viewerState.controls.update();
+  });
 }
 
-updateCommand();
+initViewer();
